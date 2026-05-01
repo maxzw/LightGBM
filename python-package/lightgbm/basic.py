@@ -29,6 +29,7 @@ import scipy.sparse
 from .compat import (
     CFFI_INSTALLED,
     PANDAS_INSTALLED,
+    POLARS_INSTALLED,
     PYARROW_INSTALLED,
     arrow_cffi,
     arrow_is_boolean,
@@ -43,6 +44,8 @@ from .compat import (
     pd_CategoricalDtype,
     pd_DataFrame,
     pd_Series,
+    pl_DataFrame,
+    pl_Series,
 )
 
 if TYPE_CHECKING:
@@ -129,6 +132,8 @@ _LGBM_LabelType = Union[
     pd_DataFrame,
     pa_Array,
     pa_ChunkedArray,
+    pl_DataFrame,
+    pl_Series,
 ]
 _LGBM_PredictDataType = Union[
     str,
@@ -872,6 +877,55 @@ def _data_from_pandas(
     )
 
 
+def _data_from_polars(
+    data: "pl_DataFrame",
+    feature_name: _LGBM_FeatureNameConfiguration,
+    categorical_feature: _LGBM_CategoricalFeatureConfiguration,
+    pandas_categorical: Optional[List[List]],
+) -> Tuple["pa_Table", List[str], Union[List[str], List[int]], List[List]]:
+    if not POLARS_INSTALLED:
+        raise LightGBMError("Polars is not installed, cannot convert Polars DataFrame to Arrow Table.")
+    if not PYARROW_INSTALLED:
+        raise LightGBMError("Cannot use Polars input with LightGBM without 'pyarrow' installed.")
+    if data.height < 1:
+        raise ValueError("Input data must be non empty.")
+
+    import polars as pl
+
+    # determine feature names
+    if feature_name == "auto":
+        feature_name = data.columns
+
+    # determine categorical features
+    cat_cols = [name for name, dtype in data.schema.items() if dtype == pl.Categorical]
+    if pandas_categorical is None:  # train dataset
+        pandas_categorical = [list(data[col].cat.get_categories()) for col in cat_cols]
+        # convert all categorical columns to codes
+        if cat_cols:
+            data = data.with_columns(pl.col(cat).to_physical().cast(pl.Float32).fill_null(np.nan) for cat in cat_cols)
+    else:
+        if len(cat_cols) != len(pandas_categorical):
+            raise ValueError("train and valid dataset categorical_feature do not match.")
+        data_categories = [list(data[col].cat.get_categories()) for col in cat_cols]
+        convert_expressions = []
+        for i, (col, category) in enumerate(zip(cat_cols, pandas_categorical)):
+            if data_categories[i] != list(category):
+                # need to remap: replace values with their indices in the target category list
+                mapping = {v: i for i, v in enumerate(category)}
+                convert_expressions.append(pl.col(col).replace_strict(mapping, default=np.nan).cast(pl.Float32))
+            else:
+                # no remapping needed: just convert to codes
+                convert_expressions.append(pl.col(col).to_physical().cast(pl.Float32).fill_null(np.nan))
+        if convert_expressions:
+            data = data.with_columns(convert_expressions)
+
+    # use cat cols from DataFrame
+    if categorical_feature == "auto":
+        categorical_feature = cat_cols
+
+    return data.to_arrow(), feature_name, categorical_feature, pandas_categorical
+
+
 def _dump_pandas_categorical(
     pandas_categorical: Optional[List[List]],
     file_name: Optional[Union[str, Path]] = None,
@@ -1156,6 +1210,13 @@ class _InnerPredictor:
 
         if isinstance(data, pd_DataFrame):
             data = _data_from_pandas(
+                data=data,
+                feature_name="auto",
+                categorical_feature="auto",
+                pandas_categorical=self.pandas_categorical,
+            )[0]
+        elif isinstance(data, pl_DataFrame):
+            data = _data_from_polars(
                 data=data,
                 feature_name="auto",
                 categorical_feature="auto",
@@ -2135,6 +2196,13 @@ class Dataset:
                 categorical_feature=categorical_feature,
                 pandas_categorical=self.pandas_categorical,
             )
+        elif isinstance(data, pl_DataFrame):
+            data, feature_name, categorical_feature, self.pandas_categorical = _data_from_polars(
+                data=data,
+                feature_name=feature_name,
+                categorical_feature=categorical_feature,
+                pandas_categorical=self.pandas_categorical,
+            )
         elif _is_pyarrow_table(data) and feature_name == "auto":
             feature_name = data.column_names
 
@@ -3088,6 +3156,12 @@ class Dataset:
                 if len(label.columns) > 1:
                     raise ValueError("DataFrame for label cannot have multiple columns")
                 label_array = np.ravel(_pandas_to_numpy(label, target_dtype=np.float32))
+            if isinstance(label, pl_DataFrame):
+                if len(label.columns) > 1:
+                    raise ValueError("DataFrame for label cannot have multiple columns")
+                label_array = label[label.columns[0]].to_arrow()
+            elif isinstance(label, pl_Series):
+                label_array = label.to_arrow()
             elif _is_pyarrow_array(label):
                 label_array = label
             else:
