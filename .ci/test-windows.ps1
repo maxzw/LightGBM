@@ -33,8 +33,13 @@ if ($env:TASK -eq "cpp-tests") {
 if ($env:TASK -eq "swig") {
     $env:JAVA_HOME = $env:JAVA_HOME_8_X64  # there is pre-installed Eclipse Temurin 8 somewhere
     $ProgressPreference = "SilentlyContinue"  # progress bar bug extremely slows down download speed
+    # The SourceForge "latest" download URL resolves to the source tarball (.tar.gz),
+    # not the Windows binary zip. Use the best_release.json API to find the latest
+    # Windows-specific release (swigwin-*.zip) dynamically.
+    $releaseInfo = Invoke-RestMethod "https://sourceforge.net/projects/swig/best_release.json"
+    $swigFilename = $releaseInfo.platform_releases.windows.filename
     $params = @{
-        Uri = "https://sourceforge.net/projects/swig/files/latest/download"
+        Uri = "https://sourceforge.net/projects/swig/files$swigFilename/download"
         OutFile = "$env:BUILD_SOURCESDIRECTORY/swig/swigwin.zip"
         UserAgent = "curl"
     }
