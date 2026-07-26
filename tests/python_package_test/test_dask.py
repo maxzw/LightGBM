@@ -1601,7 +1601,7 @@ def test_predict_returns_expected_dtypes(task, output, cluster):
 
         # use a small sub-sample (to keep the tests fast)
         if output.startswith("dataframe"):
-            dX_sample = dX.sample(frac=0.001)
+            dX_sample = dX.sample(frac=0.01, random_state=42)
         else:
             dX_sample = dX[:1,]
             dX_sample.persist()
