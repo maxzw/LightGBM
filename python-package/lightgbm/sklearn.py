@@ -402,12 +402,12 @@ _lgbmmodel_doc_fit = """
         Default: 'l2' for LGBMRegressor, 'logloss' for LGBMClassifier, 'ndcg' for LGBMRanker.
     feature_name : list of str, or 'auto', optional (default='auto')
         Feature names.
-        If 'auto' and data is pandas DataFrame, data columns names are used.
+        If 'auto' and data is a Narwhals-supported DataFrame, its column names are used.
     categorical_feature : list of str or int, or 'auto', optional (default='auto')
         Categorical features.
         If list of int, interpreted as indices.
         If list of str, interpreted as feature names (need to specify ``feature_name`` as well).
-        If 'auto' and data is pandas DataFrame, pandas unordered categorical columns are used.
+        If 'auto' and data is a Narwhals-supported DataFrame, unordered categorical and enum columns are used.
         All values in categorical features will be cast to int32 and thus should be less than int32 max value (2147483647).
         Large values could be memory consuming. Consider using consecutive integers starting from zero.
         All negative values in categorical features will be treated as missing values.
@@ -497,7 +497,7 @@ _lgbmmodel_doc_predict = """
 
     validate_features : bool, optional (default=False)
         If True, ensure that the features used to predict match the ones used to train.
-        Used only if data is pandas DataFrame.
+        Used only if data is a Narwhals-supported DataFrame.
     **kwargs
         Other parameters for the prediction.
 
@@ -1203,11 +1203,11 @@ class LGBMModel(_LGBMModelBase):
 
     fit.__doc__ = (
         _lgbmmodel_doc_fit.format(
-            X_shape="numpy array, pandas DataFrame, pyarrow Table, polars DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]",
-            y_shape="numpy array, pandas DataFrame, pandas Series, list of int or float, pyarrow ChunkedArray or polars Series of shape = [n_samples]",
-            sample_weight_shape="numpy array, pandas Series, list of int or float, pyarrow ChunkedArray, polars Series of shape = [n_samples] or None, optional (default=None)",
-            init_score_shape="numpy array, pandas DataFrame, pandas Series, list of int or float, list of lists, pyarrow ChunkedArray, pyarrow Table, polars Series, polars DataFrame of shape = [n_samples] or shape = [n_samples * n_classes] (for multi-class task) or shape = [n_samples, n_classes] (for multi-class task) or None, optional (default=None)",
-            group_shape="numpy array, pandas Series, pyarrow ChunkedArray, polars Series, list of int or float, or None, optional (default=None)",
+            X_shape="numpy array, Narwhals-supported DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]",
+            y_shape="numpy array, Narwhals-supported Series or one-column DataFrame, or list of int or float of shape = [n_samples]",
+            sample_weight_shape="numpy array, Narwhals-supported Series, list of int or float, or None, optional (default=None)",
+            init_score_shape="numpy array, Narwhals-supported Series or DataFrame, list of int or float, list of lists, or None, optional (default=None), of shape = [n_samples], [n_samples * n_classes] (for multi-class task), or [n_samples, n_classes] (for multi-class task)",
+            group_shape="numpy array, Narwhals-supported Series, list of int or float, or None, optional (default=None)",
             eval_sample_weight_shape="list of array (same types as ``sample_weight`` supports), or None, optional (default=None)",
             eval_init_score_shape="list of array (same types as ``init_score`` supports), or None, optional (default=None)",
             eval_group_shape="list of array (same types as ``group`` supports), or None, optional (default=None)",
@@ -1280,7 +1280,7 @@ class LGBMModel(_LGBMModelBase):
 
     predict.__doc__ = _lgbmmodel_doc_predict.format(
         description="Return the predicted value for each sample.",
-        X_shape="numpy array, pandas DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]",
+        X_shape="numpy array, Narwhals-supported DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]",
         output_name="predicted_result",
         predicted_result_shape="array-like of shape = [n_samples] or shape = [n_samples, n_classes]",
         X_leaves_shape="array-like of shape = [n_samples, n_trees] or shape = [n_samples, n_trees * n_classes]",
@@ -1408,7 +1408,7 @@ class LGBMModel(_LGBMModelBase):
     def feature_names_in_(self) -> np.ndarray:
         """:obj:`array` of shape = [n_features]: scikit-learn compatible version of ``.feature_name_``.
 
-        Only available when training data had feature names (e.g. a pandas DataFrame).
+        Only available when training data had feature names (e.g. a Narwhals-supported DataFrame).
         When training was done with data without feature names (e.g. a numpy array),
         accessing this attribute raises ``AttributeError``.
 
@@ -1420,7 +1420,7 @@ class LGBMModel(_LGBMModelBase):
             raise AttributeError(
                 f"'{type(self).__name__}' object has no attribute 'feature_names_in_'. "
                 "The training data did not have feature names "
-                "(e.g. was a numpy array rather than a pandas DataFrame)."
+                "(e.g. it was a numpy array rather than a named DataFrame)."
             )
         return np.array(self.feature_name_)
 
@@ -1799,7 +1799,7 @@ class LGBMClassifier(_LGBMClassifierBase, LGBMModel):
 
     predict_proba.__doc__ = _lgbmmodel_doc_predict.format(
         description="Return the predicted probability for each class for each sample.",
-        X_shape="numpy array, pandas DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]",
+        X_shape="numpy array, Narwhals-supported DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]",
         output_name="predicted_probability",
         predicted_result_shape="array-like of shape = [n_samples] or shape = [n_samples, n_classes]",
         X_leaves_shape="array-like of shape = [n_samples, n_trees] or shape = [n_samples, n_trees * n_classes]",
@@ -1821,7 +1821,7 @@ class LGBMClassifier(_LGBMClassifierBase, LGBMModel):
 
         Parameters
         ----------
-        X : numpy array, pandas DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]
+        X : numpy array, Narwhals-supported DataFrame, scipy.sparse, list of lists of int or float of shape = [n_samples, n_features]
             Input features matrix.
         start_iteration : int, optional (default=0)
             Start index of the iteration to predict.
@@ -1833,7 +1833,7 @@ class LGBMClassifier(_LGBMClassifierBase, LGBMModel):
             If <= 0, all iterations from ``start_iteration`` are used (no limits).
         validate_features : bool, optional (default=False)
             If True, ensure that the features used to predict match the ones used to train.
-            Used only if data is pandas DataFrame.
+            Used only if data is a Narwhals-supported DataFrame.
         **kwargs
             Other parameters forwarded to ``predict()``.
 
