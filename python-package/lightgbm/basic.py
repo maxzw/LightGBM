@@ -1081,7 +1081,7 @@ class _InnerPredictor:
 
         Parameters
         ----------
-        data : str, pathlib.Path, numpy array, pandas DataFrame, scipy.sparse, pyarrow Table or polars DataFrame
+        data : str, pathlib.Path, numpy array, Narwhals-supported DataFrame or scipy.sparse
             Data source for prediction.
             If str or pathlib.Path, it represents the path to a text file (CSV, TSV, or LibSVM).
 
@@ -1106,7 +1106,7 @@ class _InnerPredictor:
             Used only for txt data.
         validate_features : bool, optional (default=False)
             If True, ensure that the features used to predict match the ones used to train.
-            Used only if data is pandas DataFrame.
+            Used only if data is a Narwhals-supported DataFrame.
 
             .. versionadded:: 4.0.0
 
@@ -1775,7 +1775,7 @@ class Dataset:
 
         Parameters
         ----------
-        data : str, pathlib.Path, numpy array, pandas DataFrame, scipy.sparse, Sequence, list of Sequence, list of numpy array, pyarrow Table or polars DataFrame
+        data : str, pathlib.Path, numpy array, Narwhals-supported DataFrame, scipy.sparse, Sequence, list of Sequence or list of numpy array
             Data source of Dataset.
             If str or pathlib.Path, it represents the path to a text file (CSV, TSV, or LibSVM) or a LightGBM Dataset binary file.
 
@@ -1785,7 +1785,7 @@ class Dataset:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        label : list, numpy 1-D array, pandas Series / one-column DataFrame, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        label : list, numpy 1-D array, Narwhals-supported Series or one-column DataFrame, or None, optional (default=None)
             Label of the data.
 
             .. versionadded:: 4.2.0
@@ -1796,7 +1796,7 @@ class Dataset:
 
         reference : Dataset or None, optional (default=None)
             If this is Dataset for validation, training data should be used as reference.
-        weight : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        weight : list, numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Weight for each instance. Weights should be non-negative.
 
             .. versionadded:: 4.2.0
@@ -1805,7 +1805,7 @@ class Dataset:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        group : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        group : list, numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Group/query data.
             Only used in the learning-to-rank task.
             sum(group) = n_samples.
@@ -1818,7 +1818,7 @@ class Dataset:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        init_score : list, list of lists (for multi-class task), numpy array, pandas Series, pandas DataFrame (for multi-class task), pyarrow ChunkedArray, pyarrow Table (for multi-class task), polars Series, polars DataFrame (for multi-class task) or None, optional (default=None)
+        init_score : list, list of lists (for multi-class task), numpy array, Narwhals-supported Series or DataFrame (for multi-class task), or None, optional (default=None)
             Init score for Dataset.
 
             .. versionadded:: 4.2.0
@@ -1829,12 +1829,12 @@ class Dataset:
 
         feature_name : list of str, or 'auto', optional (default="auto")
             Feature names.
-            If 'auto' and data is pandas DataFrame, pyarrow Table, or polars DataFrame, data columns names are used.
+            If 'auto' and data is a Narwhals-supported DataFrame, its column names are used.
         categorical_feature : list of str or int, or 'auto', optional (default="auto")
             Categorical features.
             If list of int, interpreted as indices.
             If list of str, interpreted as feature names (need to specify ``feature_name`` as well).
-            If 'auto' and data is pandas DataFrame, pandas unordered categorical columns are used.
+            If 'auto' and data is a Narwhals-supported DataFrame, unordered categorical and enum columns are used.
             All values in categorical features will be cast to int32 and thus should be less than int32 max value (2147483647).
             Large values could be memory consuming. Consider using consecutive integers starting from zero.
             All negative values in categorical features will be treated as missing values.
@@ -1844,7 +1844,7 @@ class Dataset:
             Other parameters for Dataset.
         free_raw_data : bool, optional (default=True)
             If True, raw data is freed after constructing inner Dataset.
-        position : numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        position : numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Position of items used in unbiased learning-to-rank task.
         """
         self._handle: Optional[_DatasetHandle] = None
@@ -2652,7 +2652,7 @@ class Dataset:
 
         Parameters
         ----------
-        data : str, pathlib.Path, numpy array, pandas DataFrame, scipy.sparse, Sequence, list of Sequence, list of numpy array, pyarrow Table or polars DataFrame
+        data : str, pathlib.Path, numpy array, Narwhals-supported DataFrame, scipy.sparse, Sequence, list of Sequence or list of numpy array
             Data source of Dataset.
             If str or pathlib.Path, it represents the path to a text file (CSV, TSV, or LibSVM) or a LightGBM Dataset binary file.
 
@@ -2662,7 +2662,7 @@ class Dataset:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        label : list, numpy 1-D array, pandas Series / one-column DataFrame, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        label : list, numpy 1-D array, Narwhals-supported Series or one-column DataFrame, or None, optional (default=None)
             Label of the data.
 
             .. versionadded:: 4.2.0
@@ -2671,7 +2671,7 @@ class Dataset:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        weight : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        weight : list, numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Weight for each instance. Weights should be non-negative.
 
             .. versionadded:: 4.2.0
@@ -2680,7 +2680,7 @@ class Dataset:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        group : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        group : list, numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Group/query data.
             Only used in the learning-to-rank task.
             sum(group) = n_samples.
@@ -2693,7 +2693,7 @@ class Dataset:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        init_score : list, list of lists (for multi-class task), numpy array, pandas Series, pandas DataFrame (for multi-class task), pyarrow ChunkedArray, pyarrow Table (for multi-class task), polars Series, polars DataFrame (for multi-class task) or None, optional (default=None)
+        init_score : list, list of lists (for multi-class task), numpy array, Narwhals-supported Series or DataFrame (for multi-class task), or None, optional (default=None)
             Init score for Dataset.
 
             .. versionadded:: 4.2.0
@@ -2704,7 +2704,7 @@ class Dataset:
 
         params : dict or None, optional (default=None)
             Other parameters for validation Dataset.
-        position : numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        position : numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Position of items used in unbiased learning-to-rank task.
 
         Returns
@@ -2832,7 +2832,7 @@ class Dataset:
         ----------
         field_name : str
             The field name of the information.
-        data : list, list of lists (for multi-class task), numpy array, pandas Series, pandas DataFrame (for multi-class task), pyarrow ChunkedArray, pyarrow Table (for multi-class task), polars Series, polars DataFrame (for multi-class task) or None
+        data : list, list of lists (for multi-class task), numpy array, Narwhals-supported Series or DataFrame (for multi-class task), or None
             The data to be set.
 
             .. versionadded:: 4.2.0
@@ -2886,8 +2886,9 @@ class Dataset:
                 data = data.ravel(order="F")
             else:
                 raise TypeError(
-                    "init_score must be list, numpy 1-D array or pandas Series.\n"
-                    "In multiclass classification init_score can also be a list of lists, numpy 2-D array or pandas DataFrame."
+                    "init_score must be a list, numpy 1-D array or Narwhals-supported Series.\n"
+                    "In multiclass classification, init_score can also be a list of lists, numpy 2-D array "
+                    "or Narwhals-supported DataFrame."
                 )
         else:
             if field_name in {"group", "position"}:
@@ -3119,7 +3120,7 @@ class Dataset:
 
         Parameters
         ----------
-        label : list, numpy 1-D array, pandas Series / one-column DataFrame, pyarrow ChunkedArray, polars Series or None
+        label : list, numpy 1-D array, Narwhals-supported Series or one-column DataFrame, or None
             The label information to be set into Dataset.
 
             .. versionadded:: 4.2.0
@@ -3155,7 +3156,7 @@ class Dataset:
 
         Parameters
         ----------
-        weight : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None
+        weight : list, numpy 1-D array, Narwhals-supported Series or None
             Weight to be set for each data point. Weights should be non-negative.
 
             .. versionadded:: 4.2.0
@@ -3194,7 +3195,7 @@ class Dataset:
 
         Parameters
         ----------
-        init_score : list, list of lists (for multi-class task), numpy array, pandas Series, pandas DataFrame (for multi-class task), pyarrow ChunkedArray, pyarrow Table (for multi-class task), polars Series, polars DataFrame (for multi-class task) or None
+        init_score : list, list of lists (for multi-class task), numpy array, Narwhals-supported Series or DataFrame (for multi-class task), or None
             Init score for Booster.
 
             .. versionadded:: 4.2.0
@@ -3222,7 +3223,7 @@ class Dataset:
 
         Parameters
         ----------
-        group : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None
+        group : list, numpy 1-D array, Narwhals-supported Series or None
             Group/query data.
             Only used in the learning-to-rank task.
             sum(group) = n_samples.
@@ -3259,7 +3260,7 @@ class Dataset:
 
         Parameters
         ----------
-        position : numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        position : numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Position of items used in unbiased learning-to-rank task.
 
         Returns
@@ -3325,7 +3326,7 @@ class Dataset:
 
         Returns
         -------
-        label : list, numpy 1-D array, pandas Series / one-column DataFrame, pyarrow ChunkedArray, polars Series or None
+        label : list, numpy 1-D array, Narwhals-supported Series or one-column DataFrame, or None
             The label information from the Dataset.
             For a constructed ``Dataset``, this will only return a numpy array.
 
@@ -3344,7 +3345,7 @@ class Dataset:
 
         Returns
         -------
-        weight : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None
+        weight : list, numpy 1-D array, Narwhals-supported Series or None
             Weight for each data point from the Dataset. Weights should be non-negative.
             For a constructed ``Dataset``, this will only return ``None`` or a numpy array.
 
@@ -3363,7 +3364,7 @@ class Dataset:
 
         Returns
         -------
-        init_score : list, list of lists (for multi-class task), numpy array, pandas Series, pandas DataFrame (for multi-class task), pyarrow ChunkedArray, pyarrow Table (for multi-class task), polars Series, polars DataFrame (for multi-class task) or None
+        init_score : list, list of lists (for multi-class task), numpy array, Narwhals-supported Series or DataFrame (for multi-class task), or None
             Init score of Booster.
             For a constructed ``Dataset``, this will only return ``None`` or a numpy array.
 
@@ -3382,7 +3383,7 @@ class Dataset:
 
         Returns
         -------
-        data : str, pathlib.Path, numpy array, pandas DataFrame, scipy.sparse, Sequence, list of Sequence, list of numpy array, pyarrow Table, polars DataFrame, or None
+        data : str, pathlib.Path, numpy array, Narwhals-supported DataFrame, scipy.sparse, Sequence, list of Sequence, list of numpy array or None
             Raw data used in the Dataset construction.
 
             .. versionadded:: 4.2.0
@@ -3424,7 +3425,7 @@ class Dataset:
 
         Returns
         -------
-        group : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None
+        group : list, numpy 1-D array, Narwhals-supported Series or None
             Group/query data.
             Only used in the learning-to-rank task.
             sum(group) = n_samples.
@@ -3450,7 +3451,7 @@ class Dataset:
 
         Returns
         -------
-        position : numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None
+        position : numpy 1-D array, Narwhals-supported Series or None
             Position of items used in unbiased learning-to-rank task.
             For a constructed ``Dataset``, this will only return ``None`` or a numpy array.
         """
@@ -4883,7 +4884,7 @@ class Booster:
 
         Parameters
         ----------
-        data : str, pathlib.Path, numpy array, pandas DataFrame, scipy.sparse, pyarrow Table or polars DataFrame
+        data : str, pathlib.Path, numpy array, Narwhals-supported DataFrame or scipy.sparse
             Data source for prediction.
             If str or pathlib.Path, it represents the path to a text file (CSV, TSV, or LibSVM).
 
@@ -4921,7 +4922,7 @@ class Booster:
             Used only if data is str.
         validate_features : bool, optional (default=False)
             If True, ensure that the features used to predict match the ones used to train.
-            Used only if data is pandas DataFrame.
+            Used only if data is a Narwhals-supported DataFrame.
         **kwargs
             Other parameters for the prediction.
 
@@ -4971,7 +4972,7 @@ class Booster:
 
         Parameters
         ----------
-        data : str, pathlib.Path, numpy array, pandas DataFrame, scipy.sparse, Sequence, list of Sequence, list of numpy array, pyarrow Table or polars DataFrame
+        data : str, pathlib.Path, numpy array, Narwhals-supported DataFrame, scipy.sparse, Sequence, list of Sequence or list of numpy array
             Data source for refit.
             If str or pathlib.Path, it represents the path to a text file (CSV, TSV, or LibSVM).
 
@@ -4981,7 +4982,7 @@ class Booster:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        label : list, numpy 1-D array, pandas Series / one-column DataFrame, pyarrow ChunkedArray, polars Series or None
+        label : list, numpy 1-D array, Narwhals-supported Series or one-column DataFrame, or None
             Label for refit.
 
             .. versionadded:: 4.2.0
@@ -4998,7 +4999,7 @@ class Booster:
 
             .. versionadded:: 4.0.0
 
-        weight : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        weight : list, numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Weight for each ``data`` instance. Weights should be non-negative.
 
             .. versionadded:: 4.0.0
@@ -5009,7 +5010,7 @@ class Booster:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        group : list, numpy 1-D array, pandas Series, pyarrow ChunkedArray, polars Series or None, optional (default=None)
+        group : list, numpy 1-D array, Narwhals-supported Series or None, optional (default=None)
             Group/query size for ``data``.
             Only used in the learning-to-rank task.
             sum(group) = n_samples.
@@ -5021,7 +5022,7 @@ class Booster:
             .. versionadded:: 4.7.0
                 Support for ``polars`` inputs
 
-        init_score : list, list of lists (for multi-class task), numpy array, pandas Series, pandas DataFrame (for multi-class task), pyarrow ChunkedArray, pyarrow Table (for multi-class task), polars Series, polars DataFrame (for multi-class task) or None, optional (default=None)
+        init_score : list, list of lists (for multi-class task), numpy array, Narwhals-supported Series or DataFrame (for multi-class task), or None, optional (default=None)
             Init score for ``data``.
 
             .. versionadded:: 4.0.0
@@ -5034,7 +5035,7 @@ class Booster:
 
         feature_name : list of str, or 'auto', optional (default="auto")
             Feature names for ``data``.
-            If 'auto' and data is pandas DataFrame, data columns names are used.
+            If 'auto' and data is a Narwhals-supported DataFrame, its column names are used.
 
             .. versionadded:: 4.0.0
 
@@ -5042,7 +5043,7 @@ class Booster:
             Categorical features for ``data``.
             If list of int, interpreted as indices.
             If list of str, interpreted as feature names (need to specify ``feature_name`` as well).
-            If 'auto' and data is pandas DataFrame, pandas unordered categorical columns are used.
+            If 'auto' and data is a Narwhals-supported DataFrame, unordered categorical and enum columns are used.
             All values in categorical features will be cast to int32 and thus should be less than int32 max value (2147483647).
             Large values could be memory consuming. Consider using consecutive integers starting from zero.
             All negative values in categorical features will be treated as missing values.
@@ -5063,7 +5064,7 @@ class Booster:
 
         validate_features : bool, optional (default=False)
             If True, ensure that the features used to refit the model match the original ones.
-            Used only if data is pandas DataFrame.
+            Used only if data is a Narwhals-supported DataFrame.
 
             .. versionadded:: 4.0.0
 

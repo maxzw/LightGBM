@@ -37,7 +37,7 @@ The LightGBM Python module can load data from:
 
 -  NumPy 2D array(s), SciPy sparse matrix
 
--  pandas DataFrame, polars DataFrame, pyarrow Table
+-  Narwhals-supported DataFrames, including pandas DataFrame, polars DataFrame, and pyarrow Table
 
 -  LightGBM binary file
 
@@ -136,7 +136,8 @@ In LightGBM, the validation data should be aligned with training data.
 LightGBM can use categorical features as input directly.
 It doesn't need to convert to one-hot encoding, and is much faster than one-hot encoding (about 8x speed-up).
 
-**Note**: You should convert your categorical features to ``int`` type before you construct ``Dataset``.
+**Note**: Categorical and enum columns in Narwhals-supported DataFrames are encoded automatically.
+For other inputs, convert categorical features to ``int`` type before constructing a ``Dataset``.
 
 **Weights can be set when needed:**
 
