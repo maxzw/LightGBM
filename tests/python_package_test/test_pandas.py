@@ -658,3 +658,41 @@ def test_pandas_unsupported_dtypes(dtype, values):
 
     with pytest.raises(ValueError, match="DataFrame dtypes must be int, float, bool, categorical or enum"):
         lgb.Dataset(df, label=y).construct()
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (pd.DataFrame({"a": np.array([1.0, 2.0])}), True),
+        (pd.DataFrame({"a": pd.array([1.0, None], dtype="Float64")}), False),
+        (pd.DataFrame({"a": pd.array([1, None], dtype="Int64")}), False),
+        (pd.DataFrame({"a": pd.array([True, None], dtype="boolean")}), False),
+        (pd.DataFrame({"a": pd.arrays.SparseArray([0.0, 1.0])}), True),
+        (
+            pd.DataFrame(
+                {
+                    "a": pd.arrays.SparseArray([0.0, 1.0]),
+                    "b": pd.array([1.0, None], dtype="Float64"),
+                }
+            ),
+            True,
+        ),
+    ],
+)
+def test_pandas_dataframe_should_use_numpy(data, expected):
+    assert lgb.basic._pandas_dataframe_should_use_numpy(data) is expected
+
+
+def test_pandas_dataframe_with_pyarrow_dtype_should_use_arrow():
+    pa = pytest.importorskip("pyarrow")
+    if not hasattr(pd, "ArrowDtype"):
+        pytest.skip("pandas does not support ArrowDtype")
+
+    arrow_data = pd.array([1.0, None], dtype=pd.ArrowDtype(pa.float64()))
+    assert not lgb.basic._pandas_dataframe_should_use_numpy(pd.DataFrame({"a": arrow_data}))
+    assert not lgb.basic._pandas_dataframe_should_use_numpy(
+        pd.DataFrame({"a": np.array([1.0, 2.0]), "b": arrow_data})
+    )
+    assert lgb.basic._pandas_dataframe_should_use_numpy(
+        pd.DataFrame({"a": pd.arrays.SparseArray([0.0, 1.0]), "b": arrow_data})
+    )
