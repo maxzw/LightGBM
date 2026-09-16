@@ -23,18 +23,15 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Iterator, List, NamedTuple, Optional, Set, Tuple, Union
 
-import narwhals as nw
-import narwhals.dependencies as nwd
-import narwhals.dtypes as nw_dtypes
-import narwhals.selectors as ncs
-import narwhals.typing as nwt
+import narwhals.stable.v2 as nw
+import narwhals.stable.v2.dependencies as nwd
+import narwhals.stable.v2.dtypes as nw_dtypes
+import narwhals.stable.v2.selectors as ncs
+import narwhals.stable.v2.typing as nwt
 import numpy as np
 import scipy.sparse
 
 from .compat import PANDAS_INSTALLED, concat, pd_CategoricalDtype, pd_DataFrame, pd_Series
-
-_NARWHALS_VERSION = tuple(int(v) for v in nw.__version__.split("."))
-_NARWHALS_VERSION_GTE_2_23 = _NARWHALS_VERSION >= (2, 23)
 
 if TYPE_CHECKING:
     from typing import Literal, TypeGuard
@@ -749,13 +746,6 @@ def _check_for_bad_narwhals_dtypes(data: nw.DataFrame) -> None:
     else:
         allowed_dtypes = (nw_dtypes.IntegerType, nw_dtypes.FloatType, nw.Boolean, nw.Categorical, nw.Enum)
         bad_types = {col: dtype for col, dtype in data.schema.items() if not isinstance(dtype, allowed_dtypes)}
-        # workaround for narwhals < 2.23: Polars Categorical with defined categories is
-        # reported as Unknown in the schema but correctly selected by ncs.categorical()
-        # (https://github.com/narwhals-dev/narwhals/issues/3719)
-        # This workaround can be removed once minimum narwhals version is 2.23.
-        if not _NARWHALS_VERSION_GTE_2_23 and bad_types:
-            categorical_cols = data.select(ncs.categorical()).columns
-            bad_types = {col: dtype for col, dtype in bad_types.items() if col not in categorical_cols}
     if bad_types:
         raise ValueError(
             f"DataFrame dtypes must be int, float, bool, categorical or enum.\n"
@@ -805,28 +795,12 @@ def _data_from_narwhals(
         feature_name = [str(col) for col in data.schema.names()]
 
     # determine categorical features
-    if _NARWHALS_VERSION_GTE_2_23:
-        cat_cols = data.select(ncs.by_dtype(nw.Categorical, nw.Enum)).columns
-    else:
-        # workaround for narwhals < 2.23:
-        # - ncs.by_dtype(nw.Enum) doesn't work (https://github.com/narwhals-dev/narwhals/issues/3720)
-        # - Polars Categorical with defined categories not in schema (https://github.com/narwhals-dev/narwhals/issues/3719)
-        # ncs.categorical() handles both Categorical variants but misses Enum; schema check catches Enum.
-        # This workaround can be removed once minimum narwhals version is 2.23.
-        cat_cols = data.select(ncs.categorical()).columns + [
-            col for col, dtype in data.schema.items() if dtype == nw.Enum
-        ]
+    cat_cols = data.select(ncs.by_dtype(nw.Categorical, nw.Enum)).columns
     cat_cols_not_ordered: List[str] = [col for col in cat_cols if not nw.is_ordered_categorical(data.get_column(col))]
     if pandas_categorical is None:  # train dataset
         pandas_categorical = []
         for col in cat_cols:
-            if not nw.is_ordered_categorical(data.get_column(col)) and data.implementation.is_polars():
-                # Use per-column observed values instead of Polars categorical metadata.
-                # Polars categories can be unstable due to the global string cache, which
-                # can leak categories across columns/slices and corrupt train/valid mapping.
-                pandas_categorical.append(data.get_column(col).unique().drop_nulls().sort().to_list())
-            else:
-                pandas_categorical.append(data.get_column(col).cat.get_categories().to_list())
+            pandas_categorical.append(data.get_column(col).cat.get_categories().to_list())
     else:
         if len(cat_cols) != len(pandas_categorical):
             raise ValueError("train and valid dataset categorical_feature do not match.")

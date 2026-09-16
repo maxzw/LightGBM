@@ -459,6 +459,15 @@ def test_get_data_polars_frame_subset(rng):
 # ------------------------------------------- CATEGORICAL ----------------------------------------- #
 
 
+def _unordered_categorical_dtype() -> pl.DataType:
+    # Set lexical ordering while supported; the argument was deprecated in Polars 1.32 and removed in 2.0.
+    # Physical ordering is treated as ordered by Narwhals, so LightGBM excludes it from auto-detected categoricals.
+    major, minor = (int(part) for part in pl.__version__.split(".")[:2])
+    if (major, minor) < (1, 32):
+        return pl.Categorical(ordering="lexical")
+    return pl.Categorical()
+
+
 def test_categorical_encoding(tmp_path):
     cat1_categories = ["a", "b", "c"]
     cat1_values = ["a", "b", "c", "b", "a"]
@@ -469,8 +478,8 @@ def test_categorical_encoding(tmp_path):
 
     df = pl.DataFrame(
         {
-            "cat1": pl.Series(cat1_values, dtype=pl.Categorical(ordering="lexical")),
-            "cat2": pl.Series(cat2_values, dtype=pl.Categorical(ordering="lexical")),
+            "cat1": pl.Series(cat1_values, dtype=_unordered_categorical_dtype()),
+            "cat2": pl.Series(cat2_values, dtype=_unordered_categorical_dtype()),
             "cat3": pl.Series(ordered_values, dtype=pl.Enum(categories=ordered_categories)),
             "num_col": [1.0, 2.0, 3.0, 4.0, 5.0],
         }
@@ -512,13 +521,13 @@ def test_categorical_encoding_unseen_category(tmp_path):
 
     train_df = pl.DataFrame(
         {
-            "cat_col": pl.Series(train_values, dtype=pl.Categorical(ordering="lexical")),
+            "cat_col": pl.Series(train_values, dtype=_unordered_categorical_dtype()),
             "num_col": [1.0, 2.0, 3.0, 4.0, 5.0],
         }
     )
     valid_df = pl.DataFrame(
         {
-            "cat_col": pl.Series(valid_values, dtype=pl.Categorical(ordering="lexical")),
+            "cat_col": pl.Series(valid_values, dtype=_unordered_categorical_dtype()),
             "num_col": [6.0, 7.0, 8.0, 9.0, 10.0],
         }
     )
@@ -531,7 +540,7 @@ def test_categorical_encoding_unseen_category(tmp_path):
     # Verify unseen category is encoded as NaN
     ref_valid_df = pl.DataFrame(
         {
-            "cat_col": pl.Series(["a", "c", None, None, "a"], dtype=pl.Categorical(ordering="lexical")),
+            "cat_col": pl.Series(["a", "c", None, None, "a"], dtype=_unordered_categorical_dtype()),
             "num_col": [6.0, 7.0, 8.0, 9.0, 10.0],
         }
     )
@@ -545,7 +554,7 @@ def test_categorical_encoding_registered_but_unobserved(tmp_path):
     # Define full DataFrame with all categories observed
     full_df = pl.DataFrame(
         {
-            "unordered_col": pl.Series(["a", "b", "c", "d"], dtype=pl.Categorical(ordering="lexical")),
+            "unordered_col": pl.Series(["a", "b", "c", "d"], dtype=_unordered_categorical_dtype()),
             "ordered_col": pl.Series(["e", "f", "g", "h"], dtype=pl.Enum(categories=["e", "f", "g", "h"])),
         }
     )
@@ -554,7 +563,7 @@ def test_categorical_encoding_registered_but_unobserved(tmp_path):
     train_df = full_df[[0, 2, 2]]  # ["a", "c", "c"] and ["e", "g", "g"]
     valid_df = pl.DataFrame(
         {
-            "unordered_col": pl.Series(["a", "b", "d"], dtype=pl.Categorical(ordering="lexical")),
+            "unordered_col": pl.Series(["a", "b", "d"], dtype=_unordered_categorical_dtype()),
             "ordered_col": pl.Series(["h", "e", "f"], dtype=pl.Enum(categories=["e", "f", "g", "h"])),
         }
     )
@@ -585,7 +594,7 @@ def test_categorical_encoding_registered_but_unobserved(tmp_path):
     # - Ordered columns: treats as continuous. Unseen values interpolate (e<f<g) or clip (h clipped to g).
     ref_valid_df = pl.DataFrame(
         {
-            "unordered_col": pl.Series(["a", None, None], dtype=pl.Categorical(ordering="lexical")),
+            "unordered_col": pl.Series(["a", None, None], dtype=_unordered_categorical_dtype()),
             "ordered_col": pl.Series(["g", "e", "g"], dtype=pl.Enum(categories=["e", "f", "g", "h"])),
         }
     )
@@ -602,7 +611,7 @@ def test_categorical_with_missing_values(tmp_path):
 
     X = pl.DataFrame(
         {
-            "cat_none": pl.Series(values_none, dtype=pl.Categorical(ordering="lexical")),
+            "cat_none": pl.Series(values_none, dtype=_unordered_categorical_dtype()),
             "num": [1.0, 2.0, 3.0, 4.0, 5.0],
         }
     )
