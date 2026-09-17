@@ -801,9 +801,7 @@ def _data_from_narwhals(
     # on their integer codes. See docs/Advanced-Topics.rst#categorical-feature-support.
     cat_cols_not_ordered: List[str] = [col for col in cat_cols if not nw.is_ordered_categorical(data.get_column(col))]
     if pandas_categorical is None:  # train dataset
-        pandas_categorical = []
-        for col in cat_cols:
-            pandas_categorical.append(data.get_column(col).cat.get_categories().to_list())
+        pandas_categorical = [data.get_column(col).cat.get_categories().to_list() for col in cat_cols]
     else:
         if len(cat_cols) != len(pandas_categorical):
             raise ValueError("train and valid dataset categorical_feature do not match.")
