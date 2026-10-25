@@ -31,7 +31,7 @@ import narwhals.stable.v2.typing as nwt
 import numpy as np
 import scipy.sparse
 
-from .compat import PANDAS_INSTALLED, concat, pd_CategoricalDtype, pd_DataFrame, pd_Series
+from .compat import PANDAS_INSTALLED, concat, pd_CategoricalDtype, pd_DataFrame, pd_Series, pd_SparseDtype
 
 if TYPE_CHECKING:
     from typing import Literal, TypeGuard
@@ -763,6 +763,14 @@ def _pandas_df_to_numpy(data: pd_DataFrame) -> np.ndarray:
     return _pandas_to_numpy(data, target_dtype=target_dtype)
 
 
+def _pandas_dataframe_should_use_numpy(data: pd_DataFrame) -> bool:
+    df_dtypes = data.dtypes
+    if any(isinstance(dtype, pd_SparseDtype) for dtype in df_dtypes):
+        # pandas cannot export sparse dtypes as an Arrow C stream
+        return True
+    return all(isinstance(dtype, np.dtype) for dtype in df_dtypes)
+
+
 def _data_from_narwhals(
     data: nwt.IntoDataFrame,
     feature_name: _LGBM_FeatureNameConfiguration,
@@ -1146,7 +1154,7 @@ class _InnerPredictor:
                 num_iteration=num_iteration,
                 predict_type=predict_type,
             )
-        elif isinstance(data, pd_DataFrame):
+        elif isinstance(data, pd_DataFrame) and _pandas_dataframe_should_use_numpy(data):
             preds, nrow = self.__pred_for_np2d(
                 mat=_pandas_df_to_numpy(data),
                 start_iteration=start_iteration,
@@ -2176,7 +2184,7 @@ class Dataset:
             self.__init_from_csc(csc=data, params_str=params_str, ref_dataset=ref_dataset)
         elif isinstance(data, np.ndarray):
             self.__init_from_np2d(mat=data, params_str=params_str, ref_dataset=ref_dataset)
-        elif isinstance(data, pd_DataFrame):
+        elif isinstance(data, pd_DataFrame) and _pandas_dataframe_should_use_numpy(data):
             self.__init_from_np2d(mat=_pandas_df_to_numpy(data), params_str=params_str, ref_dataset=ref_dataset)
         elif nwd.is_into_dataframe(data):
             self.__init_from_narwhals(data=nw.from_native(data), params_str=params_str, ref_dataset=ref_dataset)
