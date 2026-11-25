@@ -1473,3 +1473,147 @@ def test_eval_result_with_std_dev_works():
 
     # reports as a cv() tuple
     assert eval_result.is_cv_result() is True
+
+
+def _mixed_pandas_frame(pd, rng, n=2_000):
+    df = pd.DataFrame(
+        {
+            "x": rng.normal(size=n),
+            "c": pd.Categorical.from_codes(rng.integers(0, 10, n), list("abcdefghij")),
+            "i": rng.integers(0, 5, n),
+        }
+    )
+    df.loc[::7, "x"] = np.nan
+    return df
+
+
+@pytest.mark.parametrize(
+    ("make_frame", "expected_path"),
+    [
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.normal(size=(100, 3))), "numpy", id="float64"),
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.normal(size=(100, 3)).astype(np.float32)), "numpy", id="float32"),
+        pytest.param(lambda pd, rng: _mixed_pandas_frame(pd, rng, n=100), "arrow", id="mixed-with-categorical"),
+        pytest.param(
+            lambda pd, rng: pd.DataFrame({"s": pd.arrays.SparseArray(rng.normal(size=100))}), "numpy", id="sparse"
+        ),
+        pytest.param(
+            lambda pd, rng: pd.DataFrame({"h": rng.normal(size=100).astype(np.float16), "x": rng.normal(size=100)}),
+            "numpy",
+            id="float16",
+        ),
+    ],
+)
+def test_pandas_dataset_and_predict_route_to_expected_path(make_frame, expected_path, monkeypatch, rng):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+    monkeypatch.setattr(lgb.basic, "PYARROW_INSTALLED", True)
+    df = make_frame(pd, rng)
+    calls = []
+    for path, method in [
+        ("numpy", "_Dataset__init_from_np2d"),
+        ("arrow", "_Dataset__init_from_narwhals"),
+        ("numpy", "_InnerPredictor__pred_for_np2d"),
+        ("arrow", "_InnerPredictor__pred_for_narwhals"),
+    ]:
+        cls = lgb.basic.Dataset if method.startswith("_Dataset") else lgb.basic._InnerPredictor
+        original = getattr(cls, method)
+        monkeypatch.setattr(
+            cls, method, lambda *args, _o=original, _p=path, **kwargs: calls.append(_p) or _o(*args, **kwargs)
+        )
+    bst = lgb.train({"verbose": -1, "min_data_in_leaf": 1}, lgb.Dataset(df, rng.normal(size=df.shape[0])), 2)
+    bst.predict(df)
+    assert calls == [expected_path, expected_path]
+
+
+@pytest.mark.parametrize(
+    ("make_frame", "expected"),
+    [
+        # one 2D float block -> to_numpy() is a zero-copy view
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.random((50, 4))), True, id="float64-C-order"),
+        pytest.param(lambda pd, rng: pd.DataFrame(np.asfortranarray(rng.random((50, 4)))), True, id="float64-F-order"),
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.random((50, 4)).astype(np.float32)), True, id="float32"),
+        pytest.param(lambda pd, rng: pd.DataFrame({"a": rng.random(50), "b": rng.random(50)}), True, id="dict-float64"),
+        pytest.param(lambda pd, rng: pd.DataFrame({"a": rng.random(50)}), True, id="single-column"),
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.random((50, 4))).iloc[10:20], True, id="row-slice"),
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.random((50, 4)))[[0, 2]], True, id="column-subset"),
+        # multiple blocks or a dtype cast -> to_numpy() copies
+        pytest.param(
+            lambda pd, rng: pd.DataFrame({"x": rng.random(50), "c": pd.Categorical(["a", "b"] * 25)}),
+            False,
+            id="categorical",
+        ),
+        # the frame LightGBM itself produces: categoricals replaced by float codes in a separate block
+        pytest.param(
+            lambda pd, rng: lgb.basic._data_from_narwhals(
+                data=pd.DataFrame({"x": rng.random(50), "c": pd.Categorical(["a", "b"] * 25)}),
+                feature_name="auto",
+                categorical_feature="auto",
+                pandas_categorical=None,
+            )[0],
+            False,
+            id="categorical-replaced-by-codes",
+        ),
+        pytest.param(
+            lambda pd, rng: pd.DataFrame({"a": rng.random(50), "b": rng.random(50).astype(np.float32)}),
+            False,
+            id="float64-and-float32",
+        ),
+        pytest.param(
+            lambda pd, rng: pd.DataFrame({"a": rng.random(50), "b": rng.integers(0, 9, 50)}),
+            False,
+            id="float64-and-int64",
+        ),
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.integers(0, 9, (50, 4))), False, id="int64"),
+        pytest.param(lambda pd, rng: pd.DataFrame(rng.random((50, 2)) > 0.5), False, id="bool"),
+    ],
+)
+def test_pandas_df_is_zero_copy_or_unsupported_by_arrow(make_frame, expected, monkeypatch, rng):
+    pd = pytest.importorskip("pandas")
+    monkeypatch.setattr(lgb.basic, "PYARROW_INSTALLED", True)
+    df = make_frame(pd, rng)
+    arr = df.to_numpy(copy=False)
+    is_zero_copy = arr.dtype in (np.float32, np.float64) and np.shares_memory(arr, df.iloc[:, 0].to_numpy())
+    assert is_zero_copy == expected  # guards the case itself against pandas behaviour changes
+    assert lgb.basic._pandas_df_is_zero_copy_or_unsupported_by_arrow(df) == expected
+
+
+def test_pandas_numpy_fallback_matches_arrow_path_and_warns(monkeypatch, rng):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+    df = _mixed_pandas_frame(pd, rng)
+    y = df["x"].fillna(0) + df["c"].cat.codes * 0.5 + rng.normal(size=df.shape[0])
+    params = {"verbose": -1, "seed": 0, "deterministic": True, "force_row_wise": True}
+
+    def train_and_predict():
+        bst = lgb.train(params, lgb.Dataset(df, y, categorical_feature=["c"]), num_boost_round=10)
+        return bst.model_to_string().split("parameters:")[0], bst.predict(df)
+
+    def pyarrow_hints(caught):
+        return [w for w in caught if "Install pyarrow>=14" in str(w.message)]
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        monkeypatch.setattr(lgb.basic, "PYARROW_INSTALLED", True)
+        arrow_model, arrow_preds = train_and_predict()
+        assert pyarrow_hints(caught) == []
+
+        monkeypatch.setattr(lgb.basic, "PYARROW_INSTALLED", False)
+        numpy_model, numpy_preds = train_and_predict()
+        assert len(pyarrow_hints(caught)) > 0
+
+    assert numpy_model == arrow_model
+    np.testing.assert_allclose(numpy_preds, arrow_preds)
+
+
+def test_pandas_non_default_index_is_not_a_feature_on_arrow_path(rng):
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+    df = _mixed_pandas_frame(pd, rng, n=100).set_axis(range(1000, 1100))
+    assert not lgb.basic._pandas_df_is_zero_copy_or_unsupported_by_arrow(df)
+
+    ds = lgb.Dataset(df, rng.normal(size=100), params={"verbose": -1, "min_data_in_leaf": 1}).construct()
+    assert ds.num_feature() == df.shape[1]
+    assert ds.feature_name == ["x", "c", "i"]
+
+    bst = lgb.train({"verbose": -1, "min_data_in_leaf": 1}, ds, num_boost_round=2)
+    np.testing.assert_allclose(bst.predict(df), bst.predict(df.reset_index(drop=True)))

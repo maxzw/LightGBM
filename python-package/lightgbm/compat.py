@@ -153,6 +153,7 @@ try:
     from pandas import CategoricalDtype as pd_CategoricalDtype
     from pandas import DataFrame as pd_DataFrame
     from pandas import Series as pd_Series
+    from pandas import SparseDtype as pd_SparseDtype
     from pandas import concat
 
     PANDAS_INSTALLED = True
@@ -177,7 +178,24 @@ except ImportError:
         def __init__(self, *args: Any, **kwargs: Any):
             pass
 
+    class pd_SparseDtype:  # type: ignore
+        """Dummy class for pandas.SparseDtype."""
+
+        def __init__(self, *args: Any, **kwargs: Any):
+            pass
+
     concat = None
+
+"""pyarrow"""
+try:
+    from pyarrow import Table as pa_Table
+    from pyarrow import __version__ as _pyarrow_version
+
+    # narwhals needs pyarrow>=14 to export non-Arrow-native frames (e.g. pandas<2.2) through the Arrow C stream
+    PYARROW_INSTALLED = int(_pyarrow_version.split(".")[0]) >= 14
+except ImportError:
+    PYARROW_INSTALLED = False
+    pa_Table = None
 
 """cpu_count()"""
 

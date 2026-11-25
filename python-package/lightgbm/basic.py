@@ -30,7 +30,16 @@ import narwhals.stable.v2.typing as nwt
 import numpy as np
 import scipy.sparse
 
-from .compat import PANDAS_INSTALLED, concat, pd_CategoricalDtype, pd_DataFrame, pd_Series
+from .compat import (
+    PANDAS_INSTALLED,
+    PYARROW_INSTALLED,
+    concat,
+    pa_Table,
+    pd_CategoricalDtype,
+    pd_DataFrame,
+    pd_Series,
+    pd_SparseDtype,
+)
 
 if TYPE_CHECKING:
     from typing import Literal, TypeGuard
@@ -777,6 +786,34 @@ def _pandas_df_to_numpy(data: pd_DataFrame) -> np.ndarray:
     return _pandas_to_numpy(data, target_dtype=target_dtype)
 
 
+def _pandas_df_is_zero_copy_or_unsupported_by_arrow(data: pd_DataFrame) -> bool:
+    """Return True if a pandas DataFrame should be converted with NumPy instead of the Arrow C stream.
+
+    NumPy is used when ``DataFrame.to_numpy()`` is a single 2D block of float32 or float64.
+    Any other frame (multiple blocks, or a dtype that needs a cast) is copied by ``to_numpy()``,
+    and the Arrow C stream avoids that dense copy by processing per column.
+    """
+    dtypes = set(data.dtypes)
+    # pandas SparseDtype cannot be exported through Arrow's C stream (https://github.com/narwhals-dev/narwhals/issues/3722).
+    if any(isinstance(dtype, pd_SparseDtype) for dtype in dtypes):
+        return True
+    # The Arrow reader in src/arrow/array.hpp does not support float16.
+    if any(dtype == np.float16 for dtype in dtypes):
+        return True
+    # pandas has no public API for "to_numpy() is zero-copy", which holds for a single float block.
+    # The private block count exists from pandas 1.x to 3.x; if it is missing, assume a copy and prefer Arrow.
+    is_single_block = getattr(getattr(data, "_mgr", None), "nblocks", None) == 1
+    if is_single_block and len(dtypes) == 1 and next(iter(dtypes)) in (np.float32, np.float64):
+        return True
+    if not PYARROW_INSTALLED:
+        _log_warning(
+            "pandas DataFrame with mixed dtypes is converted to a dense NumPy array, which copies the data. "
+            "Install pyarrow>=14 to reduce memory usage."
+        )
+        return True
+    return False
+
+
 def _data_from_narwhals(
     data: nwt.IntoDataFrame,
     feature_name: _LGBM_FeatureNameConfiguration,
@@ -1170,9 +1207,7 @@ class _InnerPredictor:
                 num_iteration=num_iteration,
                 predict_type=predict_type,
             )
-        elif isinstance(data, pd_DataFrame):
-            # NumPy-backed frames can use this path without converting through Arrow, avoiding conversion overhead
-            # when their data is contiguous. pandas SparseDtype also cannot be exported through Arrow's C-stream.
+        elif isinstance(data, pd_DataFrame) and _pandas_df_is_zero_copy_or_unsupported_by_arrow(data):
             preds, nrow = self.__pred_for_np2d(
                 mat=_pandas_df_to_numpy(data),
                 start_iteration=start_iteration,
@@ -1698,7 +1733,11 @@ class _InnerPredictor:
         out_num_preds = ctypes.c_int64(0)
 
         # Export narwhals DataFrame to Arrow and run prediction
-        pycapsule = data.__arrow_c_stream__()
+        if data.implementation.is_pandas():
+            # pandas' own Arrow export adds a non-default index as a column, which would be read as a feature
+            pycapsule = pa_Table.from_pandas(data.to_native(), preserve_index=False).__arrow_c_stream__()
+        else:
+            pycapsule = data.__arrow_c_stream__()
         _safe_call(
             _LIB.LGBM_BoosterPredictForArrowStream(
                 self._handle,
@@ -2202,7 +2241,7 @@ class Dataset:
             self.__init_from_csc(csc=data, params_str=params_str, ref_dataset=ref_dataset)
         elif isinstance(data, np.ndarray):
             self.__init_from_np2d(mat=data, params_str=params_str, ref_dataset=ref_dataset)
-        elif isinstance(data, pd_DataFrame):
+        elif isinstance(data, pd_DataFrame) and _pandas_df_is_zero_copy_or_unsupported_by_arrow(data):
             self.__init_from_np2d(mat=_pandas_df_to_numpy(data), params_str=params_str, ref_dataset=ref_dataset)
         elif nwd.is_into_dataframe(data):
             self.__init_from_narwhals(data=nw.from_native(data), params_str=params_str, ref_dataset=ref_dataset)
@@ -2491,7 +2530,11 @@ class Dataset:
     ) -> "Dataset":
         """Initialize data from a narwhals DataFrame."""
         # Export narwhals DataFrame to Arrow
-        pycapsule = data.__arrow_c_stream__()
+        if data.implementation.is_pandas():
+            # pandas' own Arrow export adds a non-default index as a column, which would be read as a feature
+            pycapsule = pa_Table.from_pandas(data.to_native(), preserve_index=False).__arrow_c_stream__()
+        else:
+            pycapsule = data.__arrow_c_stream__()
 
         # Create dataset
         self._handle = ctypes.c_void_p()
