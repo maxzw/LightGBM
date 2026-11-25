@@ -9,7 +9,7 @@ on:
         default: "2000000"
       repeats:
         description: runs per path and scenario
-        default: "7"
+        default: "15"
       threads:
         description: LightGBM num_threads
         default: "2"
@@ -63,7 +63,7 @@ jobs:
         shell: bash
         env:
           ROWS: ${{ inputs.rows || '2000000' }}
-          REPEATS: ${{ inputs.repeats || '7' }}
+          REPEATS: ${{ inputs.repeats || '15' }}
           THREADS: ${{ inputs.threads || '2' }}
           PANDAS: ${{ matrix.pandas }}
         run: |
