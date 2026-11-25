@@ -1,0 +1,85 @@
+name: pandas routing benchmark
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: rows per frame
+        default: "2000000"
+      repeats:
+        description: runs per path and scenario
+        default: "15"
+      threads:
+        description: LightGBM num_threads
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: pandas ${{ matrix.pandas }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pandas: "3.*"
+            extra: ""
+          - pandas: "2.2.*"
+            extra: ""
+          - pandas: "2.0.*"
+            extra: "numpy<2 pyarrow<20"
+          - pandas: "1.5.*"
+            extra: "numpy<2 pyarrow<20"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: build lightgbm
+        run: |
+          pip install --upgrade pip build
+          sh build-python.sh install
+      - name: install pinned dependencies
+        shell: bash
+        env:
+          PANDAS: ${{ matrix.pandas }}
+          EXTRA: ${{ matrix.extra }}
+        run: |
+          # shellcheck disable=SC2086
+          # build-python.sh installs lightgbm without its dependencies
+          pip install "pandas==${PANDAS}" narwhals scipy pyarrow psutil ${EXTRA}
+          pip list | grep -iE "^(lightgbm|narwhals|numpy|pandas|pyarrow) "
+          python -c "import lightgbm, pandas, pyarrow, psutil"
+      - name: profile predict
+        shell: bash
+        run: python .vscode/predict_profile.py | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: run benchmark
+        shell: bash
+        env:
+          ROWS: ${{ inputs.rows || '2000000' }}
+          REPEATS: ${{ inputs.repeats || '15' }}
+          THREADS: ${{ inputs.threads || '2' }}
+          PANDAS: ${{ matrix.pandas }}
+        run: |
+          python .vscode/pandas_routing_benchmark.py \
+            --rows "${ROWS}" --repeats "${REPEATS}" --threads "${THREADS}" --csv results.csv \
+            | tee table.txt
+          {
+            echo "### pandas ${PANDAS}"
+            echo '```'
+            cat table.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: results-pandas-${{ strategy.job-index }}
+          path: |
+            results.csv
+            table.txt
