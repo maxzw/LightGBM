@@ -46,14 +46,18 @@ jobs:
           pip install --upgrade pip build
           sh build-python.sh install
       - name: install pinned dependencies
+        shell: bash
         env:
           PANDAS: ${{ matrix.pandas }}
           EXTRA: ${{ matrix.extra }}
         run: |
           # shellcheck disable=SC2086
-          pip install "pandas==${PANDAS}" psutil ${EXTRA}
-          pip list | grep -iE "^(lightgbm|numpy|pandas|pyarrow) "
+          # build-python.sh installs lightgbm without its dependencies
+          pip install "pandas==${PANDAS}" narwhals scipy pyarrow psutil ${EXTRA}
+          pip list | grep -iE "^(lightgbm|narwhals|numpy|pandas|pyarrow) "
+          python -c "import lightgbm, pandas, pyarrow, psutil"
       - name: run benchmark
+        shell: bash
         env:
           ROWS: ${{ inputs.rows || '2000000' }}
           REPEATS: ${{ inputs.repeats || '7' }}
@@ -62,7 +66,7 @@ jobs:
         run: |
           python .vscode/pandas_routing_benchmark.py \
             --rows "${ROWS}" --repeats "${REPEATS}" --threads "${THREADS}" --csv results.csv \
-            2>/dev/null | tee table.txt
+            | tee table.txt
           {
             echo "### pandas ${PANDAS}"
             echo '```'
