@@ -56,6 +56,9 @@ jobs:
           pip install "pandas==${PANDAS}" narwhals scipy pyarrow psutil ${EXTRA}
           pip list | grep -iE "^(lightgbm|narwhals|numpy|pandas|pyarrow) "
           python -c "import lightgbm, pandas, pyarrow, psutil"
+      - name: profile predict
+        shell: bash
+        run: python .vscode/predict_profile.py | tee -a "${GITHUB_STEP_SUMMARY}"
       - name: run benchmark
         shell: bash
         env:
