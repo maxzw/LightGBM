@@ -2672,25 +2672,41 @@ void LGBM_BoosterPredictForArrowChunkedArray(BoosterHandle handle,
   config.Set(param);
   OMP_SET_NUM_THREADS(config.num_threads);
 
-  // Set up iterators for all fields
   auto chunked_array_view = chunked_array.view();
+  auto num_columns = chunked_array.get_num_fields();
 
-  // Collect type-erased accessors for all fields to prevent type lookups on every iteration
-  std::vector<std::function<double(int64_t)>> accessors;
-  accessors.reserve(chunked_array.get_num_fields());
-  for (int64_t j = 0; j < chunked_array.get_num_fields(); ++j) {
+  // All fields of a record batch share its length, so the batch holding a row is looked up once
+  // per row instead of once per value
+  const auto& batches = chunked_array_view.chunks();
+  std::vector<int64_t> batch_offsets = {0};
+  batch_offsets.reserve(batches.size() + 1);
+  for (const auto* batch : batches) {
+    batch_offsets.push_back(batch_offsets.back() + batch->length);
+  }
+
+  // Resolve each field's type once, to a plain function reading one value as double
+  std::vector<double (*)(const struct ArrowArray*, int64_t)> readers;
+  readers.reserve(num_columns);
+  for (int64_t j = 0; j < num_columns; ++j) {
     chunked_array_view.field(j).visit<double>([&](auto&& visitor) {
-      accessors.emplace_back([visitor](int64_t i) { return visitor.begin()[i]; });
+      using ArrowT = typename std::decay_t<decltype(visitor)>::arrow_type;
+      readers.push_back(&LightGBM::ArrowValueAsDouble<ArrowT>);
     });
   }
 
   // Build row function
-  auto num_columns = chunked_array.get_num_fields();
-  auto row_fn = [num_columns, &accessors] (int row_idx) {
+  auto row_fn = [num_columns, &batches, &batch_offsets, &readers] (int row_idx) {
+    size_t batch_idx = 0;
+    if (batches.size() > 1) {
+      auto it = std::upper_bound(batch_offsets.begin(), batch_offsets.end(), row_idx);
+      batch_idx = static_cast<size_t>(std::distance(batch_offsets.begin(), it) - 1);
+    }
+    const auto* batch = batches[batch_idx];
+    int64_t element_idx = row_idx - batch_offsets[batch_idx];
     std::vector<std::pair<int, double>> result;
     result.reserve(num_columns);
     for (int64_t j = 0; j < num_columns; ++j) {
-      result.emplace_back(j, accessors[j](row_idx));
+      result.emplace_back(static_cast<int>(j), readers[j](batch->children[j], element_idx));
     }
     return result;
   };

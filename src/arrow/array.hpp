@@ -34,6 +34,27 @@ inline struct ArrowSchemaView MakeSchemaView(const struct ArrowSchema* schema) {
   return view;
 }
 
+/**
+ * @brief Read a single value of a primitive Arrow array as double, returning NaN for nulls.
+ *
+ * @tparam ArrowT The C++ type of the array's values.
+ * @param array The Arrow array (one chunk) to read from.
+ * @param element_idx The index of the element, relative to the array's offset.
+ */
+template <typename ArrowT>
+inline double ArrowValueAsDouble(const struct ArrowArray* array, int64_t element_idx) {
+  auto idx = array->offset + element_idx;
+  const auto* validity = static_cast<const uint8_t*>(array->buffers[0]);
+  if (validity != nullptr && !ArrowBitGet(validity, idx)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  if constexpr (std::is_same_v<ArrowT, bool>) {
+    return ArrowBitGet(static_cast<const uint8_t*>(array->buffers[1]), idx);
+  } else {
+    return static_cast<double>(static_cast<const ArrowT*>(array->buffers[1])[idx]);
+  }
+}
+
 /* --------------------------------------------------------------------------------------------- */
 /*                                         CHUNKED ARRAY                                         */
 /* --------------------------------------------------------------------------------------------- */
@@ -168,6 +189,11 @@ class ArrowChunkedArray {
         : type_(type), schema_(schema), chunks_(std::move(chunks)) {}
 
    public:
+    /**
+     * @brief The non-empty chunks of this view.
+     */
+    const std::vector<const struct ArrowArray*>& chunks() const { return chunks_; }
+
     explicit View(std::vector<View> views) {
       type_ = views[0].type_;
       schema_ = views[0].schema_;
@@ -283,6 +309,8 @@ class ArrowChunkedArray {
     }
 
    public:
+    using arrow_type = ArrowT;
+
     Iterator<ArrowT, OutputT> begin() const { return Iterator<ArrowT, OutputT>(*this, 0, 0); }
     Iterator<ArrowT, OutputT> end() const {
       return Iterator<ArrowT, OutputT>(*this, chunks_.size(), 0);
