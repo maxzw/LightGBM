@@ -12,6 +12,7 @@ How
 ---
     python .vscode/pandas_routing_benchmark.py                       # default grid, 5 repeats
     python .vscode/pandas_routing_benchmark.py --rows 5000000 --repeats 9 --csv out.csv
+    python .vscode/pandas_routing_benchmark.py --report a.csv b.csv=pandas-2.0   # markdown tables from CSVs
 
 Every measurement runs in its own fresh interpreter (``--child`` mode), so allocator caches, pandas' internal
 caches and earlier peaks never leak between runs. Runs of all paths are interleaved in random order, so
@@ -121,9 +122,72 @@ def child(path: str, scenario: str, rows: int, threads: int) -> None:
                 "predict_mb": predict_mb,
                 "predict_s": predict_s,
                 "model_hash": model_hash,
+                "pandas": pd.__version__,
             }
         )
     )
+
+
+METRICS = [
+    ("construct_mb", "`Dataset.construct()` peak memory", "MB", 0),
+    ("predict_mb", "`Booster.predict()` peak memory", "MB", 0),
+    ("construct_s", "`Dataset.construct()` time", "s", 2),
+    ("predict_s", "`Booster.predict()` time", "s", 2),
+]
+
+
+def markdown_report(runs_by_label: dict) -> str:
+    """Markdown tables (one per metric) comparing NumPy vs. Arrow medians, one column per run set.
+
+    A change is marked with ``~`` when the min-max ranges of both paths overlap,
+    i.e. it cannot be told apart from run-to-run noise.
+    """
+    seen = {r["scenario"] for runs in runs_by_label.values() for r in runs}
+    scenarios = [s for s in SCENARIOS if s in seen]
+    labels = list(runs_by_label)
+    lines = []
+    for key, title, unit, decimals in METRICS:
+        lines += [f"**{title}**, median NumPy → Arrow (Δ%)", ""]
+        lines += ["| scenario | " + " | ".join(labels) + " |", "|---" * (len(labels) + 1) + "|"]
+        for scenario in scenarios:
+            cells = []
+            for label in labels:
+                values = {
+                    path: [
+                        float(r[key]) for r in runs_by_label[label] if r["scenario"] == scenario and r["path"] == path
+                    ]
+                    for path in PATHS
+                }
+                if not all(values.values()):
+                    cells.append("")
+                    continue
+                med = {path: statistics.median(v) for path, v in values.items()}
+                overlap = min(values["numpy"]) <= max(values["arrow"]) and min(values["arrow"]) <= max(values["numpy"])
+                # a % change from a (near) zero baseline is meaningless
+                if med["numpy"] >= 1 or unit == "s":
+                    delta = f" ({'~' if overlap else ''}{(med['arrow'] - med['numpy']) / med['numpy'] * 100:+.0f}%)"
+                else:
+                    delta = ""
+                cells.append(f"{med['numpy']:.{decimals}f} → {med['arrow']:.{decimals}f} {unit}{delta}")
+            name = f"{scenario} (control)" if scenario == "float_only" else scenario
+            lines.append(f"| {name} | " + " | ".join(cells) + " |")
+        lines.append("")
+    lines.append("`~`: min-max ranges of both paths overlap, so the change is within run-to-run noise.")
+    lines.append("control: a single float block, which goes through NumPy in production; Arrow is forced here.")
+    return "\n".join(lines)
+
+
+def read_report_args(specs: list) -> dict:
+    import csv
+
+    runs_by_label = {}
+    for spec in specs:
+        path, _, label = spec.partition("=")
+        with open(path, newline="") as f:
+            runs = list(csv.DictReader(f))
+        label = label or (f"pandas {runs[0]['pandas']}" if runs and runs[0].get("pandas") else path)
+        runs_by_label[label] = runs
+    return runs_by_label
 
 
 def main() -> None:
@@ -133,11 +197,15 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--scenarios", nargs="+", default=list(SCENARIOS), choices=list(SCENARIOS))
     parser.add_argument("--csv", help="also write raw runs to this CSV file")
+    parser.add_argument("--report", nargs="+", metavar="CSV[=LABEL]", help="print markdown tables from CSV files")
     parser.add_argument("--child", nargs=2, metavar=("PATH", "SCENARIO"), help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if args.child:
         child(args.child[0], args.child[1], args.rows, args.threads)
+        return
+    if args.report:
+        print(markdown_report(read_report_args(args.report)))
         return
 
     jobs = [(p, s) for s in args.scenarios for p in PATHS for _ in range(args.repeats)]
