@@ -794,15 +794,15 @@ def _pandas_df_is_zero_copy_or_unsupported_by_arrow(data: pd_DataFrame) -> bool:
     and the Arrow C stream avoids that dense copy by processing per column.
     """
     dtypes = set(data.dtypes)
-    # pandas SparseDtype cannot be exported through Arrow's C stream (https://github.com/narwhals-dev/narwhals/issues/3722)
+    # pandas SparseDtype cannot be exported through Arrow's C stream (https://github.com/narwhals-dev/narwhals/issues/3722).
     if any(isinstance(dtype, pd_SparseDtype) for dtype in dtypes):
         return True
     # The Arrow reader in src/arrow/array.hpp does not support float16.
     if any(dtype == np.float16 for dtype in dtypes):
         return True
-    # pandas has no public API for "to_numpy() is zero-copy". _can_fast_transpose (single 2D numpy block) is
-    # unchanged from pandas 1.x to 3.x; if it disappears, assume a copy and prefer Arrow.
-    is_single_block = getattr(data, "_can_fast_transpose", False)
+    # pandas has no public API for "to_numpy() is zero-copy", which holds for a single float block.
+    # The private block count exists from pandas 1.x to 3.x; if it is missing, assume a copy and prefer Arrow.
+    is_single_block = getattr(getattr(data, "_mgr", None), "nblocks", None) == 1
     if is_single_block and len(dtypes) == 1 and next(iter(dtypes)) in (np.float32, np.float64):
         return True
     if not PYARROW_INSTALLED:
