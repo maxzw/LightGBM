@@ -1,0 +1,70 @@
+name: categorical codes benchmark
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: rows per frame
+        default: "2000000"
+      repeats:
+        description: runs per path and scenario
+        default: "15"
+      threads:
+        description: LightGBM num_threads
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: ${{ matrix.input }} input
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        input: [pandas, polars, pyarrow]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: build lightgbm
+        run: |
+          pip install --upgrade pip build
+          sh build-python.sh install
+      - name: install pinned dependencies
+        shell: bash
+        run: |
+          # build-python.sh installs lightgbm without its dependencies
+          pip install pandas polars narwhals scipy pyarrow psutil
+          pip list | grep -iE "^(lightgbm|narwhals|numpy|pandas|polars|pyarrow) "
+          python -c "import lightgbm, pandas, polars, pyarrow, psutil"
+      - name: run benchmark
+        shell: bash
+        env:
+          ROWS: ${{ inputs.rows || '2000000' }}
+          REPEATS: ${{ inputs.repeats || '15' }}
+          THREADS: ${{ inputs.threads || '2' }}
+          INPUT: ${{ matrix.input }}
+        run: |
+          python .vscode/categorical_codes_benchmark.py \
+            --rows "${ROWS}" --repeats "${REPEATS}" --threads "${THREADS}" --input "${INPUT}" --csv results.csv \
+            | tee table.txt
+          {
+            echo "### ${INPUT} input"
+            echo '```'
+            cat table.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: results-${{ matrix.input }}
+          path: |
+            results.csv
+            table.txt
