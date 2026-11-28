@@ -579,7 +579,7 @@ def test_categorical_encoding_registered_but_unobserved(tmp_path):
         categorical_feature="auto",
         pandas_categorical=train_ds.pandas_categorical,
     )[0]
-    assert valid_df_encoded[:, 0].to_list() == [0.0, None, None]  # a -> 0, b -> None, d -> None
+    assert valid_df_encoded[:, 0].to_list() == [0, -1, -1]  # a -> 0, b -> -1 (missing), d -> -1 (missing)
     assert valid_df_encoded[:, 1].to_list() == [3.0, 0.0, 1.0]  # h -> 3, e -> 0, f -> 1
 
     # C++ binning

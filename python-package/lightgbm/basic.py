@@ -777,6 +777,15 @@ def _pandas_df_to_numpy(data: pd_DataFrame) -> np.ndarray:
     return _pandas_to_numpy(data, target_dtype=target_dtype)
 
 
+def _categorical_code_dtype(num_categories: int) -> Any:
+    """Smallest signed integer type that holds codes 0..num_categories-1 (and -1 for unordered missing values)."""
+    if num_categories <= np.iinfo(np.int8).max + 1:
+        return nw.Int8
+    if num_categories <= np.iinfo(np.int16).max + 1:
+        return nw.Int16
+    return nw.Int32
+
+
 def _data_from_narwhals(
     data: nwt.IntoDataFrame,
     feature_name: _LGBM_FeatureNameConfiguration,
@@ -806,10 +815,25 @@ def _data_from_narwhals(
         if len(cat_cols) != len(pandas_categorical):
             raise ValueError("train and valid dataset categorical_feature do not match.")
     if cat_cols:  # cat_cols is list
-        data = data.with_columns(
-            nw.col(col).replace_strict({cat: i for i, cat in enumerate(categories)}, default=None).alias(col)
-            for col, categories in zip(cat_cols, pandas_categorical, strict=True)
-        )
+        exprs = []
+        is_pandas = data.implementation.is_pandas()
+        for col, categories in zip(cat_cols, pandas_categorical, strict=True):
+            codes = {cat: i for i, cat in enumerate(categories)}
+            code_dtype = _categorical_code_dtype(len(categories))
+            if col in cat_cols_not_ordered:
+                # unordered categoricals: small integer codes, -1 (treated as missing) for missing / unseen values
+                # the extra cast is needed for pyarrow input: narwhals ignores return_dtype there when a default is set
+                # ref: https://github.com/narwhals-dev/narwhals/issues/4219
+                expr = nw.col(col).replace_strict(codes, default=-1, return_dtype=code_dtype).cast(code_dtype)
+            elif is_pandas:
+                # ordered categoricals are numeric features, so missing / unseen values must stay missing (not -1).
+                # numpy integers can't hold nulls, so pandas keeps float codes with NaN
+                expr = nw.col(col).replace_strict(codes, default=None)
+            else:
+                # Arrow-backed integer columns are nullable: small integer codes, null for missing / unseen values
+                expr = nw.col(col).replace_strict(codes, default=None, return_dtype=code_dtype).cast(code_dtype)
+            exprs.append(expr.alias(col))
+        data = data.with_columns(*exprs)
 
     # use cat cols from DataFrame
     if categorical_feature == "auto":

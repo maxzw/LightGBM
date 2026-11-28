@@ -956,10 +956,25 @@ def test_categorical_code_conversion_doesnt_modify_original_data(feature_name, c
         codes = df[column_name].cat.codes
     else:
         # if we only saw 'a' during training we just replace its code
-        # and leave the rest as nan
+        # and set the rest to -1, which LightGBM treats as missing
         a_code = df[column_name].cat.categories.get_loc("a")
-        codes = np.where(df[column_name] == "a", a_code, np.nan)
+        codes = np.where(df[column_name] == "a", a_code, -1)
     np.testing.assert_equal(codes, data[:, 0])
+
+
+@pytest.mark.parametrize(
+    ("num_categories", "expected_dtype"),
+    [
+        (1, lgb.basic.nw.Int8),
+        (128, lgb.basic.nw.Int8),
+        (129, lgb.basic.nw.Int16),
+        (32_768, lgb.basic.nw.Int16),
+        (32_769, lgb.basic.nw.Int32),
+    ],
+)
+def test_categorical_code_dtype(num_categories, expected_dtype):
+    # codes 0..num_categories-1 plus -1 for missing values must fit in the returned type
+    assert lgb.basic._categorical_code_dtype(num_categories) == expected_dtype
 
 
 def test_pandas_categorical_json_serialization_works(rng):
