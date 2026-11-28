@@ -596,9 +596,9 @@ def test_pandas_categorical_code_conversion_doesnt_modify_original_data(feature_
         codes = df["x1"].cat.codes
     else:
         # if we only saw 'a' during training we just replace its code
-        # and leave the rest as nan
+        # and set the rest to -1, which LightGBM treats as missing
         a_code = df["x1"].cat.categories.get_loc("a")
-        codes = np.where(df["x1"] == "a", a_code, np.nan)
+        codes = np.where(df["x1"] == "a", a_code, -1)
     np.testing.assert_equal(codes, data[:, 0])
 
 
